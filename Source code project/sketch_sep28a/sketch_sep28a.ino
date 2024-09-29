@@ -2,15 +2,17 @@
 #include <LiquidCrystal_I2C.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <SD.h>  // Tambahkan library SD untuk manajemen microSD card
 
 #define FLOW_SENSOR_PIN 26   // Pin di mana sensor YF-S201 terhubung
 #define PULSES_PER_LITER 450 // Pulsa per liter (nilai umum untuk YF-S201, bisa disesuaikan)
+#define SD_CS_PIN 5          // Pin CS untuk modul microSD card
 
 // Inisialisasi alamat I2C dan ukuran LCD (20x4)
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
-const char* ssid = "xyz";        // Nama SSID Wi-Fi
-const char* password = "muntilan"; // Kata sandi Wi-Fi
+const char* ssid = "naf";        // Nama SSID Wi-Fi
+const char* password = "nafillasuksesduniaakhiratamin"; // Kata sandi Wi-Fi
 
 const char* telegramApiToken = "7527693914:AAEGYcfsZdgyZgtvQNr9uGKiqC93LDACi68";  // Token API Telegram
 const char* chatID = "5994652575";  // ID obrolan bot Telegram (chat_id)
@@ -22,6 +24,37 @@ float costPerM3 = 3500.00;      // Harga per m³ (3500 Rupiah per m³)
 float totalCost = 0;            // Biaya total berdasarkan konsumsi air
 
 WiFiClientSecure client;  // Koneksi HTTPS yang aman
+File dataFile;            // File untuk menyimpan data di microSD
+
+// Fungsi untuk membaca data dari microSD saat startup
+void readFromSD() {
+  dataFile = SD.open("/data.txt");
+  if (dataFile) {
+    String data = dataFile.readStringUntil('\n');
+    totalLiters = data.toFloat();
+    data = dataFile.readStringUntil('\n');
+    totalCost = data.toFloat();
+    dataFile.close();
+    Serial.println("Data from SD card:");
+    Serial.println("Total Liters: " + String(totalLiters));
+    Serial.println("Total Cost: Rp " + String(totalCost));
+  } else {
+    Serial.println("Failed to open data file from SD card.");
+  }
+}
+
+// Fungsi untuk menyimpan data ke microSD
+void writeToSD() {
+  dataFile = SD.open("/data.txt", FILE_WRITE);
+  if (dataFile) {
+    dataFile.println(totalLiters);
+    dataFile.println(totalCost);
+    dataFile.close();
+    Serial.println("Data written to SD card.");
+  } else {
+    Serial.println("Error opening data file for writing.");
+  }
+}
 
 // Fungsi yang dipanggil setiap kali pulsa terdeteksi dari sensor
 void pulseCounter() {
@@ -79,6 +112,16 @@ void setup() {
   lcd.init();
   lcd.backlight();
 
+  // Inisialisasi SD card
+  if (!SD.begin(SD_CS_PIN)) {
+    Serial.println("SD Card initialization failed!");
+    return;
+  }
+  Serial.println("SD Card initialized.");
+  
+  // Baca data dari SD card jika tersedia
+  readFromSD();
+
   // Setup pin sensor dan interrupt untuk mendeteksi pulsa
   pinMode(FLOW_SENSOR_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR_PIN), pulseCounter, FALLING);
@@ -133,14 +176,8 @@ void loop() {
     lcd.setCursor(13, 3);    
     lcd.print(pulseCount); 
 
-    // Debugging informasi
-    Serial.print("Flow Rate: ");
-    Serial.print(flowRate);
-    Serial.print(" L/s, Total Liters: ");
-    Serial.print(totalLiters);
-    Serial.print(" L, Total Cost: ");
-    Serial.print(totalCost);
-    Serial.println(" Rp");
+    // Simpan data ke SD card
+    writeToSD();
 
     // Kirim pesan ke bot Telegram setiap 3 detik
     if (currentTime - lastMessageTime >= messageInterval) {
